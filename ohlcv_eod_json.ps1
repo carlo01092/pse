@@ -1,4 +1,4 @@
-﻿$total_saves = 0;
+$total_saves = 0;
 $current_date_unix = [int][double]::Parse((Get-Date -Date "12:00:00 AM" -UFormat %s))
 
 Get-Content .\stock.txt | ForEach-Object {
@@ -15,7 +15,6 @@ Get-Content .\stock.txt | ForEach-Object {
         } else {
             "$_ not ok"
         }
- 
     } else {
         "$_ not found"
     }
