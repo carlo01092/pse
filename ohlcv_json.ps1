@@ -5,7 +5,7 @@ $current_date_unix = [int][double]::Parse((Get-Date -Date "12:00:00 AM" -UFormat
 Get-Content .\stock.txt | ForEach-Object {
     $response = Invoke-WebRequest -Uri `
         "https://api.kisschart.com/api/chart/history?symbol=$_&resolution=D&from=473472000&to=$current_date_unix"
-    ++$stocks_counter
+
     if ($response.StatusCode -eq 200) {
         $ohlcv = $response.Content | ConvertFrom-Json
 
@@ -21,6 +21,8 @@ Get-Content .\stock.txt | ForEach-Object {
     } else {
         "$_ not found"
     }
+
+    ++$stocks_counter
 }
 
 "$total_saves/$stocks_counter total saves"
