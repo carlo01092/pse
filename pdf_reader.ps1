@@ -24,19 +24,19 @@ $assert_header =
     "Note: Oddlot and Block Sale include DDS transactions converted to Philippine peso based on previous day exchange rate.",
     "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
 $assert_sector =
-    "F I N A N C I A L S",
-    "I N D U S T R I A L",
-    "H O L D I N G   F I R M S",
-    "P R O P E R T Y",
-    "S E R V I C E S",
-    "M I N I N G   &   O I L",
-    "P R E F E R R E D",
-    "P H I L .   D E P O S I T A R Y   R E C E I P T S",
-    "W A R R A N T S",
-    "S M A L L ,   M E D I U M   &   E M E R G I N G",
-    "E X C H A N G E   T R A D E D   F U N D S",
-    "D O L L A R   D E N O M I N A T E D   S E C U R I T I E S",
-    "S E C T O R A L   S U M M A R Y"
+    "FINANCIALS",
+    "INDUSTRIAL",
+    "HOLDING FIRMS",
+    "PROPERTY",
+    "SERVICES",
+    "MINING & OIL",
+    "PREFERRED",
+    "PHIL. DEPOSITARY RECEIPTS",
+    "WARRANTS",
+    "SMALL,  MEDIUM & EMERGING",
+    "EXCHANGE TRADED FUNDS",
+    "DOLLAR DENOMINATED SECURITIES",
+    "SECTORAL SUMMARY"
 $assert_subsector =
     "BANKS",
     "OTHER FINANCIAL INSTITUTIONS",
@@ -61,7 +61,7 @@ $assert_subsector =
     "OIL"
 
 $counter = 1
-$ohlcvvf_collection = @()
+$ohlcvvf_collection = @() #convert to key-value pairs(?)
 $line = $reader.ReadLine()
 [ref]$parsed_date = Get-Date
 $content_unixtime = 0
@@ -71,7 +71,10 @@ while( ($line -ne $null)  )
 {
    $line = $line.Trim()
 
-    if (($line -in $assert_header) -or ($line -in $assert_sector)) {
+    if (
+        ($line -in $assert_header) -or
+        ((($line -replace "\b\s\b+", "") -replace "\b\s+\b", " ") -in $assert_sector)
+    ) {
         "$line [YES ($counter)]"
     } else {
         $is_valid_date = [DateTime]::TryParseExact(
@@ -83,53 +86,67 @@ while( ($line -ne $null)  )
         )
 
         if ($is_valid_date) {
-            "$line [YES ($counter)]"
+            "$line [YES ($counter)][$(__LINE__)]"
             $content_unixtime = [System.DateTimeOffset]::new($parsed_date.Value.ToLocalTime()).ToUnixTimeSeconds()
            
         } else {
             foreach ($_ in $assert_subsector) {
                 if ($line -match $_) {
-                    "$line [YES ($counter)]"
+                    "$line [YES ($counter)][$(__LINE__)]"
                     $line = $reader.ReadLine()
                     ++$counter
                     continue content
                 }
             }
 
-            $words = $line.Trim().Split()
+            $words = $line.Split()
             if ($words.Length -ge 10) {
                 [ref]$parsed_value = 0
                 $ohlcvvf = @()
                 for ($i = -1; $i -ge -$words.Length; $i--) {
-                    $is_valid_value = [System.Double]::TryParse($words[$i], $parsed_value)
+                    $is_valid_value = [System.Double]::TryParse(
+                        $words[$i],
+                        [System.Globalization.NumberStyles]::AllowThousands -bor
+                        [System.Globalization.NumberStyles]::AllowDecimalPoint -bor
+                        [System.Globalization.NumberStyles]::AllowParentheses,
+                        $null,
+                        $parsed_value
+                    )
 
                     if (($is_valid_value) -and ($i -in -9..-1)) {
-                        $ohlcvvf += $parsed_value.Value
-                    } elseif (($i -eq -10) -and [bool](Select-String -InputObject $a -Pattern "\b$($words[$i])\b")) {
+                        if (($i -in -7..-1)) {
+                            $ohlcvvf += $parsed_value.Value
+                        }
+                    } elseif (
+                        ($i -eq -10) -and
+                        [bool](Select-String -InputObject $assert_stock -Pattern "\b$($words[$i])\b")
+                    ) {
                         $ohlcvvf += $words[$i]
                     } elseif ($i -lt -10) {
                         [Array]::Reverse($ohlcvvf)
-                        $ohlcvvf_collection += $ohlcvvf
+                        $ohlcvvf_collection += , $ohlcvvf
 
-                        "$line [YES ($counter)] $(__LINE__)"
+                        "$line [YES ($counter)][$(__LINE__)]"
                         $line = $reader.ReadLine()
                         ++$counter
                         continue content
+                    } elseif ($i -in -2..-1) {
+                        if (($i -eq -1) -and ($words[$i] -eq "-")) {
+                            $ohlcvvf += 0
+                        } elseif (($i -eq -2) -and ($words[$i] -eq "-")) {
+                            "$line [YES ($counter)][$(__LINE__)]"
+                            $line = $reader.ReadLine()
+                            ++$counter
+                            continue content     
+                        }
                     } else {
-                        "$line [UNKNOWN FIELD ($counter)]"
+                        "$($words[$i]) [UNKNOWN FIELD ($counter)][$(__LINE__)]"
                         break
                     }
                 }
-                
-
-                #"$line [YES ($counter)]"
-
-                #$line = $reader.ReadLine()
-                #++$counter
-                #continue content
             }
 
-            "$line [UNKNOWN FIELD ($counter)]"
+            "$line [UNKNOWN FIELD ($counter)][$(__LINE__)]"
             break
         }
     }
