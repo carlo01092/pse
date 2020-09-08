@@ -1,8 +1,10 @@
+#TODO, improve id incrementing (not including weekends & holidays)
 $counter = 0;
-$starting_id = 3219 #December 1 2016
-$year = 2016
-$last_id = 4131 #August 28 2020, $counter == 910
-
+#minimum 3219 (December 1 2016)
+#December 1 2016 to September 30 2020, $counter == 930
+$starting_id = 4132 #September 1 2020
+$year = 2020
+$last_id = 4137 #September 8 2020
 $id_border = 3239, 3482, 3727, 3971
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -31,8 +33,8 @@ for ($id = $starting_id; $id -le $last_id; $id++) {
         continue
     }
 
-    "$file_name saved ($year$id)"
+    Write-Host "$file_name saved ($year$id)"
     ++$counter
 }
 
-"$counter total saves"
+Write-Host "$counter total saves"
