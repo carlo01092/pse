@@ -37,7 +37,7 @@ Get-Content .\stock.txt | ForEach-Object {
                     [System.IO.File]::WriteAllBytes("$PSScriptRoot\json\$_.json", $ohlcv_bytes)
                 }
 
-                "$_ saved"
+                Write-Host "$_ saved"
                 ++$total_saves
             } else {
                 Write-Warning "$_ objects unequal (!json.object.Length)"
@@ -52,4 +52,4 @@ Get-Content .\stock.txt | ForEach-Object {
     ++$stocks_counter
 }
 
-"$total_saves/$stocks_counter total saves"
+Write-Host "$total_saves/$stocks_counter total saves"
