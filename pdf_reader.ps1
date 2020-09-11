@@ -2,6 +2,11 @@ function __LINE__ {
     $MyInvocation.ScriptLineNumber
 }
 
+function message {
+    Write-Host "$($args[1])  --  $(if($args[0]){"PASSED"}else{"FAILED"}) (counter: $($args[2]), line: $($args[3]))" `
+            -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
+}
+
 Add-Type -path "itextsharp.dll"
 $file = "$PWD\pdf\stockQuotes_08282020.pdf"
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
@@ -10,6 +15,7 @@ $t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 1)
 $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
 
 $assert_stock = Get-Content -Path .\stock.txt
+#region header
 $assert_header =
     "The Philippine Stock Exchange, Inc",
     "Daily Quotations Report", 
@@ -23,6 +29,8 @@ $assert_header =
     "SECURITY PRICE, USD VOLUME VALUE, USD",
     "Note: Oddlot and Block Sale include DDS transactions converted to Philippine peso based on previous day exchange rate.",
     "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
+#endregion header
+#region sector
 $assert_sector =
     "FINANCIALS",
     "INDUSTRIAL",
@@ -37,6 +45,8 @@ $assert_sector =
     "EXCHANGE TRADED FUNDS",
     "DOLLAR DENOMINATED SECURITIES",
     "SECTORAL SUMMARY"
+#endregion sector
+#region subsector
 $assert_subsector =
     "BANKS",
     "OTHER FINANCIAL INSTITUTIONS",
@@ -59,23 +69,25 @@ $assert_subsector =
     "OTHER SERVICES",
     "MINING",
     "OIL"
+#endregion subsector
 
 $counter = 1
-$ohlcvvf_collection = @() #convert to key-value pairs(?)
+$ohlcvvf_collection = @()
 $line = $reader.ReadLine()
 [ref]$parsed_date = Get-Date
 $content_unixtime = 0
 
-:content
-while( ($line -ne $null)  )
+while($line -ne $null)
 {
    $line = $line.Trim()
 
+    #test line if header or sector or subsector
     if (
         ($line -in $assert_header) -or
-        ((($line -replace "\b\s\b+", "") -replace "\b\s+\b", " ") -in $assert_sector)
+        ($null -ne ($assert_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
+        ($null -ne ($assert_subsector | ? { $line -match $_ }))
     ) {
-        "$line [YES ($counter)]"
+        message $true $line $counter $(__LINE__)
     } else {
         $is_valid_date = [DateTime]::TryParseExact(
             $line,
@@ -85,24 +97,20 @@ while( ($line -ne $null)  )
             $parsed_date
         )
 
+        #test line if valid date w/ defined format
         if ($is_valid_date) {
-            "$line [YES ($counter)][$(__LINE__)]"
+            message $true $line $counter $(__LINE__)
             $content_unixtime = [System.DateTimeOffset]::new($parsed_date.Value.ToLocalTime()).ToUnixTimeSeconds()
            
         } else {
-            foreach ($_ in $assert_subsector) {
-                if ($line -match $_) {
-                    "$line [YES ($counter)][$(__LINE__)]"
-                    $line = $reader.ReadLine()
-                    ++$counter
-                    continue content
-                }
-            }
-
             $words = $line.Split()
+
+            #if words in line is greater than 10 (N,S,B,A,O,H,L,C,V,Val,NF values)
             if ($words.Length -ge 10) {
                 [ref]$parsed_value = 0
-                $ohlcvvf = @()
+                $ohlcvvf = @{}
+
+                #read words in reverse order (right to left)
                 for ($i = -1; $i -ge -$words.Length; $i--) {
                     $is_valid_value = [System.Double]::TryParse(
                         $words[$i],
@@ -113,41 +121,33 @@ while( ($line -ne $null)  )
                         $parsed_value
                     )
 
-                    if (($is_valid_value) -and ($i -in -9..-1)) {
-                        if (($i -in -7..-1)) {
-                            $ohlcvvf += $parsed_value.Value
+                    #test if word are valid number (double) & in range of Bid..Net Foreign
+                    #test if word is symbol & exists in list
+                    if ($i -in -9..-1) {
+                        #test if word are in range of Open..Net Foreign then add to array
+                        #test if word is Net Foreign then add 0 to array
+                        #test if word is Value
+                        if ($is_valid_value -and ($i -in -7..-1)) {
+                            $ohlcvvf.(@("O", "H", "L", "C", "V", "Val", "NF")[$i]) = $parsed_value.Value
+                        } elseif (($i -eq -1) -and ($words[$i] -eq "-")) {
+                            $ohlcvvf.NF = 0
+                        } elseif (($i -eq -2) -and ($words[$i] -eq "-")) {
+                            message $true $line $counter $(__LINE__)
+                            break    
                         }
-                    } elseif (
-                        ($i -eq -10) -and
-                        [bool](Select-String -InputObject $assert_stock -Pattern "\b$($words[$i])\b")
-                    ) {
-                        $ohlcvvf += $words[$i]
+                    } elseif (($i -eq -10) -and ($words[$i] -in $assert_stock)) {
+                        $ohlcvvf.S = $words[$i]
                     } elseif ($i -lt -10) {
-                        [Array]::Reverse($ohlcvvf)
                         $ohlcvvf_collection += , $ohlcvvf
 
-                        "$line [YES ($counter)][$(__LINE__)]"
-                        $line = $reader.ReadLine()
-                        ++$counter
-                        continue content
-                    } elseif ($i -in -2..-1) {
-                        if (($i -eq -1) -and ($words[$i] -eq "-")) {
-                            $ohlcvvf += 0
-                        } elseif (($i -eq -2) -and ($words[$i] -eq "-")) {
-                            "$line [YES ($counter)][$(__LINE__)]"
-                            $line = $reader.ReadLine()
-                            ++$counter
-                            continue content     
-                        }
-                    } else {
-                        "$($words[$i]) [UNKNOWN FIELD ($counter)][$(__LINE__)]"
+                        message $true $line $counter $(__LINE__)
                         break
+                    } else {
+                        message $false $line $counter $(__LINE__)
+                        return
                     }
                 }
             }
-
-            "$line [UNKNOWN FIELD ($counter)][$(__LINE__)]"
-            break
         }
     }
 
@@ -160,4 +160,5 @@ while( ($line -ne $null)  )
 #   Write-Output $texto
 #}
 
+$reader.Close()
 $pdf.Close()
