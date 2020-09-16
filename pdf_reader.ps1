@@ -37,14 +37,7 @@ $assert_sector =
     "HOLDING FIRMS",
     "PROPERTY",
     "SERVICES",
-    "MINING & OIL",
-    "PREFERRED",
-    "PHIL. DEPOSITARY RECEIPTS",
-    "WARRANTS",
-    "SMALL,  MEDIUM & EMERGING",
-    "EXCHANGE TRADED FUNDS",
-    "DOLLAR DENOMINATED SECURITIES",
-    "SECTORAL SUMMARY"
+    "MINING & OIL"
 #endregion sector
 #region subsector
 $assert_subsector =
@@ -121,12 +114,12 @@ while($line -ne $null)
                         $parsed_value
                     )
 
-                    #test if word are valid number (double) & in range of Bid..Net Foreign
+                    #test if word are in range of Bid..Net Foreign
                     #test if word is symbol & exists in list
                     if ($i -in -9..-1) {
-                        #test if word are in range of Open..Net Foreign then add to array
-                        #test if word is Net Foreign then add 0 to array
-                        #test if word is Value
+                        #test if word are valid number (double) & in range of Open..Net Foreign then add to hashtable
+                        #test if word is Net Foreign & equals to "-" then add 0 to hashtable
+                        #test if word is Value & equals to "-" then skip while loop
                         if ($is_valid_value -and ($i -in -7..-1)) {
                             $ohlcvvf.(@("O", "H", "L", "C", "V", "Val", "NF")[$i]) = $parsed_value.Value
                         } elseif (($i -eq -1) -and ($words[$i] -eq "-")) {
