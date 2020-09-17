@@ -4,7 +4,7 @@ function __LINE__ {
 
 function message {
     Write-Host "$($args[1])  --  $(if($args[0]){"PASSED"}else{"FAILED"}) (counter: $($args[2]), line: $($args[3]))" `
-            -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
+        -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
 }
 
 Add-Type -path "itextsharp.dll"
@@ -31,13 +31,14 @@ $assert_header =
     "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
 #endregion header
 #region sector
-$assert_sector =
-    "FINANCIALS",
-    "INDUSTRIAL",
-    "HOLDING FIRMS",
-    "PROPERTY",
-    "SERVICES",
-    "MINING & OIL"
+$assert_sector = @{
+    "FIN" = "FINANCIALS";
+    "IND" = "INDUSTRIAL";
+    "HDG" = "HOLDING FIRMS";
+    "PRO" = "PROPERTY";
+    "SVC" = "SERVICES";
+    "M-O" = "MINING & OIL";
+}
 #endregion sector
 #region subsector
 $assert_subsector =
@@ -77,7 +78,7 @@ while($line -ne $null)
     #test line if header or sector or subsector
     if (
         ($line -in $assert_header) -or
-        ($null -ne ($assert_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
+        ($null -ne ($assert_sector.Values | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
         ($null -ne ($assert_subsector | ? { $line -match $_ }))
     ) {
         message $true $line $counter $(__LINE__)
@@ -105,6 +106,7 @@ while($line -ne $null)
 
                 #read words in reverse order (right to left)
                 for ($i = -1; $i -ge -$words.Length; $i--) {
+
                     $is_valid_value = [System.Double]::TryParse(
                         $words[$i],
                         [System.Globalization.NumberStyles]::AllowThousands -bor
@@ -114,8 +116,15 @@ while($line -ne $null)
                         $parsed_value
                     )
 
+                    <#
+                    if ($counter -eq 42) {
+                        Write-Host "$i ($($words[$i]) -- $($words[$i].Length)) ($is_valid_value)" -ForegroundColor Green
+                    }
+                    #>
+
                     #test if word are in range of Bid..Net Foreign
                     #test if word is symbol & exists in list
+                    #test if word is Name
                     if ($i -in -9..-1) {
                         #test if word are valid number (double) & in range of Open..Net Foreign then add to hashtable
                         #test if word is Net Foreign & equals to "-" then add 0 to hashtable
@@ -127,6 +136,28 @@ while($line -ne $null)
                         } elseif (($i -eq -2) -and ($words[$i] -eq "-")) {
                             message $true $line $counter $(__LINE__)
                             break    
+                        } elseif (
+                            ([System.String]::IsNullOrWhiteSpace($words[$i])) -and
+                            ($null -ne ($assert_sector.Values | ? { $line -match "$_ SECTOR TOTAL VOLUME :" }))
+                        ) {
+                            <#
+                            $sector_total = $words | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
+                            $k = @{
+                                "S" = 0;
+                                "O" = 0;
+                                "H" = 0;
+                                "L" = 0;
+                                "C" = 0;
+                                "V" = 0;
+                                "Val" = 0;
+                                "NF" = 0s;
+                            }
+                            $ohlcvvf_collection += , @{}
+                            #>
+
+                            message $true $line $counter $(__LINE__)
+                            break
+                            
                         }
                     } elseif (($i -eq -10) -and ($words[$i] -in $assert_stock)) {
                         $ohlcvvf.S = $words[$i]
@@ -148,10 +179,12 @@ while($line -ne $null)
     ++$counter
 }
 
-#for ($page = 1; $page -le 1; $page++) {
-#    $texto = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf,$page)
-#   Write-Output $texto
-#}
+<#
+for ($page = 1; $page -le 1; $page++) {
+    $texto = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf,$page)
+   Write-Output $texto
+}
+#>
 
 $reader.Close()
 $pdf.Close()
