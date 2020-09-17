@@ -11,7 +11,7 @@ Add-Type -path "itextsharp.dll"
 $file = "$PWD\pdf\stockQuotes_08282020.pdf"
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
 #$pdf.NumberOfPages
-$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 1)
+$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 5)
 $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
 
 $assert_stock = Get-Content -Path .\stock.txt
@@ -38,8 +38,16 @@ $assert_sector = @{
     "PRO" = "PROPERTY";
     "SVC" = "SERVICES";
     "M-O" = "MINING & OIL";
+    "_SME" = "SMALL, MEDIUM & EMERGING";
 }
 #endregion sector
+#region other_sector
+$assert_other_sector =
+    "PREFERRED",
+    "PHIL. DEPOSITARY RECEIPTS",
+    "PPHIL. DEPOSIT RECEIPTS",
+    "WARRANTS"
+#endregion other_sector
 #region subsector
 $assert_subsector =
     "BANKS",
@@ -79,7 +87,8 @@ while($line -ne $null)
     if (
         ($line -in $assert_header) -or
         ($null -ne ($assert_sector.Values | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
-        ($null -ne ($assert_subsector | ? { $line -match $_ }))
+        ($null -ne ($assert_subsector | ? { $line -match $_ })) -or
+        ($null -ne ($assert_other_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) }))
     ) {
         message $true $line $counter $(__LINE__)
     } else {
