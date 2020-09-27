@@ -11,7 +11,7 @@ Add-Type -path "itextsharp.dll"
 $file = "$PWD\pdf\stockQuotes_08282020.pdf"
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
 #$pdf.NumberOfPages
-$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 5)
+$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 7)
 $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
 
 $assert_stock = Get-Content -Path .\stock.txt
@@ -38,15 +38,17 @@ $assert_sector = @{
     "PRO" = "PROPERTY";
     "SVC" = "SERVICES";
     "M-O" = "MINING & OIL";
-    "_SME" = "SMALL, MEDIUM & EMERGING";
 }
 #endregion sector
 #region other_sector
 $assert_other_sector =
     "PREFERRED",
     "PHIL. DEPOSITARY RECEIPTS",
-    "PPHIL. DEPOSIT RECEIPTS",
-    "WARRANTS"
+    "PHIL. DEPOSIT RECEIPTS",
+    "WARRANTS",
+    "SMALL, MEDIUM & EMERGING",
+    "EXCHANGE TRADED FUNDS",
+    "DOLLAR DENOMINATED SECURITIES"
 #endregion other_sector
 #region subsector
 $assert_subsector =
@@ -106,7 +108,7 @@ while($line -ne $null)
             $content_unixtime = [System.DateTimeOffset]::new($parsed_date.Value.ToLocalTime()).ToUnixTimeSeconds()
            
         } else {
-            $words = $line.Split()
+            $words = $line.Split() | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
 
             #if words in line is greater than 10 (N,S,B,A,O,H,L,C,V,Val,NF values)
             if ($words.Length -ge 10) {
@@ -126,7 +128,7 @@ while($line -ne $null)
                     )
 
                     <#
-                    if ($counter -eq 42) {
+                    if ($counter -eq 11) {
                         Write-Host "$i ($($words[$i]) -- $($words[$i].Length)) ($is_valid_value)" -ForegroundColor Green
                     }
                     #>
@@ -146,8 +148,8 @@ while($line -ne $null)
                             message $true $line $counter $(__LINE__)
                             break    
                         } elseif (
-                            ([System.String]::IsNullOrWhiteSpace($words[$i])) -and
-                            ($null -ne ($assert_sector.Values | ? { $line -match "$_ SECTOR TOTAL VOLUME :" }))
+                            ($null -ne ($assert_sector.Values | ? { $line -match "$_ SECTOR TOTAL VOLUME :" })) -or
+                            ($null -ne ($assert_other_sector | ? { $line -match "$_ TOTAL VOLUME :" }))
                         ) {
                             <#
                             $sector_total = $words | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
