@@ -2,9 +2,9 @@
 $counter = 0;
 #minimum 3219 (December 1 2016)
 #December 1 2016 to September 30 2020, $counter == 930
-$starting_id = 4132 #September 1 2020
+$starting_id = 4138 #September 9 2020
 $year = 2020
-$last_id = 4137 #September 8 2020
+$last_id = 4150 #September 25 2020
 $id_border = 3239, 3482, 3727, 3971
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
