@@ -8,10 +8,11 @@ function message {
 }
 
 Add-Type -path "itextsharp.dll"
-$file = "$PWD\pdf\stockQuotes_08282020.pdf"
+#$file = "$PWD\pdf\stockQuotes_08282020.pdf"
+$file = "$PWD\pdf\stockQuotes_09252020.pdf"
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
-#$pdf.NumberOfPages
-$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 7)
+#$pdf.NumberOfPage
+$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 8)
 $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
 
 $assert_stock = Get-Content -Path .\stock.txt
@@ -27,7 +28,6 @@ $assert_header =
     "Name Symbol USD USD USD USD USD USD Volume Value, USD USD",
     "SECURITY PRICE, Php VOLUME VALUE, Php",
     "SECURITY PRICE, USD VOLUME VALUE, USD",
-    "Note: Oddlot and Block Sale include DDS transactions converted to Philippine peso based on previous day exchange rate.",
     "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
 #endregion header
 #region sector
@@ -48,7 +48,8 @@ $assert_other_sector =
     "WARRANTS",
     "SMALL, MEDIUM & EMERGING",
     "EXCHANGE TRADED FUNDS",
-    "DOLLAR DENOMINATED SECURITIES"
+    "DOLLAR DENOMINATED SECURITIES",
+    "DDS"
 #endregion other_sector
 #region subsector
 $assert_subsector =
@@ -74,16 +75,34 @@ $assert_subsector =
     "MINING",
     "OIL"
 #endregion subsector
+#region footer
+$assert_footer =
+    "TOTAL MAIN BOARD VOLUME :",
+    "Note:",
+    "NO. OF",
+    "ODDLOT",
+    "BLOCK SALE"
+#endregion footer
 
 $counter = 1
 $ohlcvvf_collection = @()
 $line = $reader.ReadLine()
 [ref]$parsed_date = Get-Date
 $content_unixtime = 0
+$is_block_sale_php = $false
+$is_block_sale_usd = $false
 
 while($line -ne $null)
 {
    $line = $line.Trim()
+
+    if (
+        #(($counter -ge 7) -and ($counter -le 9)) -or
+        #(($counter -ge 11) -and ($counter -le 17)) -or
+        (($counter -ge 19) -and ($counter -le 26))
+    ) {
+        Write-Host "$line ($($line.Length))" -ForegroundColor Green
+    }
 
     #test line if header or sector or subsector
     if (
@@ -128,7 +147,7 @@ while($line -ne $null)
                     )
 
                     <#
-                    if ($counter -eq 11) {
+                    if ($counter -eq 42) {
                         Write-Host "$i ($($words[$i]) -- $($words[$i].Length)) ($is_valid_value)" -ForegroundColor Green
                     }
                     #>
@@ -148,24 +167,10 @@ while($line -ne $null)
                             message $true $line $counter $(__LINE__)
                             break    
                         } elseif (
-                            ($null -ne ($assert_sector.Values | ? { $line -match "$_ SECTOR TOTAL VOLUME :" })) -or
-                            ($null -ne ($assert_other_sector | ? { $line -match "$_ TOTAL VOLUME :" }))
+                            #($null -ne ($assert_sector.Values | ? { $line -match "^$_ SECTOR TOTAL VOLUME :" })) -or
+                            ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
+                            ($null -ne ($assert_footer | ? { $line -match "^$_" }))
                         ) {
-                            <#
-                            $sector_total = $words | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
-                            $k = @{
-                                "S" = 0;
-                                "O" = 0;
-                                "H" = 0;
-                                "L" = 0;
-                                "C" = 0;
-                                "V" = 0;
-                                "Val" = 0;
-                                "NF" = 0s;
-                            }
-                            $ohlcvvf_collection += , @{}
-                            #>
-
                             message $true $line $counter $(__LINE__)
                             break
                             
@@ -182,6 +187,12 @@ while($line -ne $null)
                         return
                     }
                 }
+            } elseif (
+                ($null -ne ($assert_sector.Values | ? { $line -match "^$_ SECTOR TOTAL VOLUME :" })) -or
+                ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
+                ($null -ne ($assert_footer | ? { $line -match "^$_" }))
+              ) {
+                message $true $line $counter $(__LINE__)
             }
         }
     }
