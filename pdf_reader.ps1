@@ -26,8 +26,6 @@ $assert_header =
     "Name Symbol Bid Ask Open High Low Close Volume Value, Php Php",
     "Bid Ask Open High Low Close Buying/(Selling),",
     "Name Symbol USD USD USD USD USD USD Volume Value, USD USD",
-    "SECURITY PRICE, Php VOLUME VALUE, Php",
-    "SECURITY PRICE, USD VOLUME VALUE, USD",
     "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
 #endregion header
 #region sector
@@ -89,20 +87,27 @@ $ohlcvvf_collection = @()
 $line = $reader.ReadLine()
 [ref]$parsed_date = Get-Date
 $content_unixtime = 0
+
+$header_block_sale_php = "SECURITY PRICE, Php VOLUME VALUE, Php"
+$header_block_sale_usd = "SECURITY PRICE, USD VOLUME VALUE, USD"
 $is_block_sale_php = $false
 $is_block_sale_usd = $false
+
+$sectoral_summary = "SECTORAL SUMMARY"
 
 while($line -ne $null)
 {
    $line = $line.Trim()
 
+    <#
     if (
         #(($counter -ge 7) -and ($counter -le 9)) -or
         #(($counter -ge 11) -and ($counter -le 17)) -or
         (($counter -ge 19) -and ($counter -le 26))
     ) {
-        Write-Host "$line ($($line.Length))" -ForegroundColor Green
+        #Write-Host "$line ($($line.Length))" -ForegroundColor Green
     }
+    #>
 
     #test line if header or sector or subsector
     if (
@@ -171,6 +176,10 @@ while($line -ne $null)
                             ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
                             ($null -ne ($assert_footer | ? { $line -match "^$_" }))
                         ) {
+                            if ($is_block_sale_usd -eq $true) {
+                                $is_block_sale_usd = $false
+                            }
+
                             message $true $line $counter $(__LINE__)
                             break
                             
@@ -191,8 +200,32 @@ while($line -ne $null)
                 ($null -ne ($assert_sector.Values | ? { $line -match "^$_ SECTOR TOTAL VOLUME :" })) -or
                 ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
                 ($null -ne ($assert_footer | ? { $line -match "^$_" }))
-              ) {
+            ) {
                 message $true $line $counter $(__LINE__)
+            } elseif (
+                $line -eq $header_block_sale_php -and
+                $is_block_sale_php -eq $false
+            ) {
+                $is_block_sale_php = $true
+                message $true $line $counter $(__LINE__)
+            } elseif (
+                $line -eq $header_block_sale_usd -and
+                $is_block_sale_usd -eq $false
+            ) {
+                $is_block_sale_usd = $true
+                $is_block_sale_php = $false #if ($is_block_sale_php -eq $true)
+                message $true $line $counter $(__LINE__)
+            } elseif (
+                (
+                    $is_block_sale_php -eq $true -or
+                    $is_block_sale_usd -eq $true
+                ) -and
+                $line.Split()[0] -in $assert_stock
+            ) {
+                message $true $line $counter $(__LINE__)
+            } else {
+                message $false $line $counter $(__LINE__)
+                return
             }
         }
     }
