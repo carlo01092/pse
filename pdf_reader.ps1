@@ -21,11 +21,12 @@ function is_valid_double {
 }
 
 Add-Type -path "itextsharp.dll"
-#$file = "$PWD\pdf\stockQuotes_08282020.pdf"
-$file = "$PWD\pdf\stockQuotes_09252020.pdf"
+$file = "$PWD\stockQuotes_10022020.pdf"
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
-#$pdf.NumberOfPage
-$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, 8)
+$number_of_pages = $pdf.NumberOfPages
+
+$page = 1
+$t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, $page)
 $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
 
 $assert_stock = Get-Content -Path .\stock.txt
@@ -48,8 +49,16 @@ $assert_sector = @{
     "PRO" = "PROPERTY";
     "SVC" = "SERVICES";
     "M-O" = "MINING & OIL";
+    "SME" = "SME";
+    "ETF" = "ETF";
 }
 #endregion sector
+#region sector_summary
+$assert_sector_summary = @{
+    "PSEI" = "PSEi";
+    "ALL" = "All Shares";
+}
+#endregion sector_summary
 #region other_sector
 $assert_other_sector =
     "PREFERRED",
@@ -108,6 +117,11 @@ $is_block_sale_usd = $false
 $header_sectoral_summary = "SECTORAL SUMMARY"
 $header_sectoral_fields = "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
 $is_sectoral_summary = $false
+
+$PSEI = "PSEI"
+$grand_total = "GRAND TOTAL"
+$foreign = "FOREIGN"
+$net = "NET"
 
 while($line -ne $null)
 {
@@ -187,26 +201,66 @@ while($line -ne $null)
             ) {
                 message $true $line $counter $(__LINE__)
             } elseif ($is_sectoral_summary) {
-                if (
-                    $words.Length -ge 9 -and
-                    ($null -ne ($assert_sector.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) }))
-                ) {
+                if (($line -replace "\s+", "") -match [Regex]::Escape(($foreign -replace "\s+", ""))) {
+                    $at_end = ($line -replace "\s+", "") -match [Regex]::Escape(($net -replace "\s+", ""))
+
+                    if ($at_end) {
+                        [ref]$parsed_value = 0
+                        $parsed_value = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value}else{0}
+
+                        ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).NF = $parsed_value.Value
+                    }
+
+                    message $true $line $counter $(__LINE__)
+
+                    if ($at_end) {
+                        return
+                    }
+                } elseif ($null -ne ($assert_sector.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) })) {
+                    if ($words.Length -ge 9) {
+                        [ref]$parsed_value = 0
+                        $sector_name = [System.String]::Join(" ", $words[(-$words.Length)..-9])
+
+                        $ohlcvvf_collection += , @{
+                            "N" = $sector_name;
+                            "S" = $assert_sector.Keys | ? { ($sector_name -replace "\s+", "") -match [Regex]::Escape(($assert_sector["$_"] -replace "\s+", "")) };
+                            "O" = if(is_valid_double $words[-8] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "H" = if(is_valid_double $words[-7] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "L" = if(is_valid_double $words[-6] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "C" = if(is_valid_double $words[-5] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "V" = if(is_valid_double $words[-2] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "Val" = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                            "NF" = 0; #MISSING: net foreign of every sectors
+                        }
+                    }
+
+                    message $true $line $counter $(__LINE__)
+                } elseif ($null -ne ($assert_sector_summary.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) })) {
                     [ref]$parsed_value = 0
+                    $sector_name = [System.String]::Join(" ", $words[(-$words.Length)..-7])
+                    $sector_symbol = $assert_sector_summary.Keys | ? { 
+                        ($sector_name -replace "\s+", "") -match [Regex]::Escape(($assert_sector_summary["$_"] -replace "\s+", ""))
+                    }
 
                     $ohlcvvf_collection += , @{
-                        #fix when Name is 2 or more words
-                        "N" = $words[0];
-                        #"S" = $assert_sector.Keys | ? {$assert_sector["$_"] -eq $words[0]};
-                        "S" = $assert_sector.Keys | ? { ($words[0] -replace "\s+", "") -match [Regex]::Escape(($assert_sector["$_"] -replace "\s+", "")) };
-                        "O" = if(is_valid_double $words[1] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-
-                        "H" = if(is_valid_double $words[-7] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-                        "L" = if(is_valid_double $words[-6] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-                        "C" = if(is_valid_double $words[-5] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-                        "V" = if(is_valid_double $words[-2] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-                        "Val" = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
-                        "NF" = 0; #MISSING: net foreign of every sectors
+                        "N" = $sector_name;
+                        "S" = $sector_symbol;
+                        "O" = if(is_valid_double $words[-6] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "H" = if(is_valid_double $words[-5] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "L" = if(is_valid_double $words[-4] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "C" = if(is_valid_double $words[-3] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "V" = 0;
+                        "Val" = 0;
+                        "NF" = 0;
                     }
+
+                    message $true $line $counter $(__LINE__)
+                } elseif (($line -replace "\s+", "") -match [Regex]::Escape(($grand_total -replace "\s+", ""))) {
+                    [ref]$parsed_value = 0
+                    $parsed_value = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value}else{0}
+
+                    ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).V = $parsed_value.Value
+                    ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).Val = $parsed_value.Value
 
                     message $true $line $counter $(__LINE__)
                 } elseif($line -eq $header_sectoral_fields) {
@@ -245,14 +299,14 @@ while($line -ne $null)
 
     $line = $reader.ReadLine()
     ++$counter
+    
+    if ($line -eq $null -and $page -lt $number_of_pages) {
+        ++$page
+        $t = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf, $page)
+        $reader = New-Object -TypeName System.IO.StringReader -ArgumentList $t
+        $line = $reader.ReadLine()
+    }
 }
-
-<#
-for ($page = 1; $page -le 1; $page++) {
-    $texto = [iTextSharp.text.pdf.parser.PdfTextExtractor]::GetTextFromPage($pdf,$page)
-   Write-Output $texto
-}
-#>
 
 $reader.Close()
 $pdf.Close()
