@@ -1,3 +1,5 @@
+#$PSVersionTable.PSVersion.ToString() = 5.1.17134.858
+
 function __LINE__ {
     $MyInvocation.ScriptLineNumber
 }
@@ -5,6 +7,17 @@ function __LINE__ {
 function message {
     Write-Host "$($args[1])  --  $(if($args[0]){"PASSED"}else{"FAILED"}) (counter: $($args[2]), line: $($args[3]))" `
         -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
+}
+
+function is_valid_double {
+    return [System.Double]::TryParse(
+        $args[0],
+        [System.Globalization.NumberStyles]::AllowThousands -bor
+        [System.Globalization.NumberStyles]::AllowDecimalPoint -bor
+        [System.Globalization.NumberStyles]::AllowParentheses,
+        $null,
+        $args[1]
+    )
 }
 
 Add-Type -path "itextsharp.dll"
@@ -25,8 +38,7 @@ $assert_header =
     "Buying/(Selling),",
     "Name Symbol Bid Ask Open High Low Close Volume Value, Php Php",
     "Bid Ask Open High Low Close Buying/(Selling),",
-    "Name Symbol USD USD USD USD USD USD Volume Value, USD USD",
-    "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
+    "Name Symbol USD USD USD USD USD USD Volume Value, USD USD"
 #endregion header
 #region sector
 $assert_sector = @{
@@ -93,28 +105,22 @@ $header_block_sale_usd = "SECURITY PRICE, USD VOLUME VALUE, USD"
 $is_block_sale_php = $false
 $is_block_sale_usd = $false
 
-$sectoral_summary = "SECTORAL SUMMARY"
+$header_sectoral_summary = "SECTORAL SUMMARY"
+$header_sectoral_fields = "OPEN HIGH LOW CLOSE %CHANGE PT.CHANGE VOLUME VALUE, Php"
+$is_sectoral_summary = $false
 
 while($line -ne $null)
 {
    $line = $line.Trim()
+   $words = $line.Split() | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
 
-    <#
     if (
-        #(($counter -ge 7) -and ($counter -le 9)) -or
-        #(($counter -ge 11) -and ($counter -le 17)) -or
-        (($counter -ge 19) -and ($counter -le 26))
-    ) {
-        #Write-Host "$line ($($line.Length))" -ForegroundColor Green
-    }
-    #>
-
-    #test line if header or sector or subsector
-    if (
-        ($line -in $assert_header) -or
-        ($null -ne ($assert_sector.Values | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
-        ($null -ne ($assert_subsector | ? { $line -match $_ })) -or
-        ($null -ne ($assert_other_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) }))
+        !$is_sectoral_summary -and (
+            ($line -in $assert_header) -or
+            ($null -ne ($assert_sector.Values | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) })) -or
+            ($null -ne ($assert_subsector | ? { $line -match $_ })) -or
+            ($null -ne ($assert_other_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) }))
+        )
     ) {
         message $true $line $counter $(__LINE__)
     } else {
@@ -126,44 +132,23 @@ while($line -ne $null)
             $parsed_date
         )
 
-        #test line if valid date w/ defined format
         if ($is_valid_date) {
             message $true $line $counter $(__LINE__)
             $content_unixtime = [System.DateTimeOffset]::new($parsed_date.Value.ToLocalTime()).ToUnixTimeSeconds()
            
         } else {
-            $words = $line.Split() | ? { -not [System.String]::IsNullOrWhiteSpace($_) }
-
-            #if words in line is greater than 10 (N,S,B,A,O,H,L,C,V,Val,NF values)
-            if ($words.Length -ge 10) {
+            if ($words.Length -ge 10 -and !$is_sectoral_summary) {
                 [ref]$parsed_value = 0
                 $ohlcvvf = @{}
 
-                #read words in reverse order (right to left)
                 for ($i = -1; $i -ge -$words.Length; $i--) {
+                    $is_valid_value = is_valid_double $words[$i] $parsed_value
 
-                    $is_valid_value = [System.Double]::TryParse(
-                        $words[$i],
-                        [System.Globalization.NumberStyles]::AllowThousands -bor
-                        [System.Globalization.NumberStyles]::AllowDecimalPoint -bor
-                        [System.Globalization.NumberStyles]::AllowParentheses,
-                        $null,
-                        $parsed_value
-                    )
-
-                    <#
-                    if ($counter -eq 42) {
-                        Write-Host "$i ($($words[$i]) -- $($words[$i].Length)) ($is_valid_value)" -ForegroundColor Green
-                    }
-                    #>
-
-                    #test if word are in range of Bid..Net Foreign
-                    #test if word is symbol & exists in list
-                    #test if word is Name
-                    if ($i -in -9..-1) {
-                        #test if word are valid number (double) & in range of Open..Net Foreign then add to hashtable
-                        #test if word is Net Foreign & equals to "-" then add 0 to hashtable
-                        #test if word is Value & equals to "-" then skip while loop
+                    if ( ($line -replace "\s+", "") -eq ($header_sectoral_summary -replace "\s+", "") ) {
+                        $is_sectoral_summary = $true
+                        message $true $line $counter $(__LINE__)
+                        break
+                    } elseif ($i -in -9..-1) {
                         if ($is_valid_value -and ($i -in -7..-1)) {
                             $ohlcvvf.(@("O", "H", "L", "C", "V", "Val", "NF")[$i]) = $parsed_value.Value
                         } elseif (($i -eq -1) -and ($words[$i] -eq "-")) {
@@ -172,7 +157,6 @@ while($line -ne $null)
                             message $true $line $counter $(__LINE__)
                             break    
                         } elseif (
-                            #($null -ne ($assert_sector.Values | ? { $line -match "^$_ SECTOR TOTAL VOLUME :" })) -or
                             ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
                             ($null -ne ($assert_footer | ? { $line -match "^$_" }))
                         ) {
@@ -202,6 +186,35 @@ while($line -ne $null)
                 ($null -ne ($assert_footer | ? { $line -match "^$_" }))
             ) {
                 message $true $line $counter $(__LINE__)
+            } elseif ($is_sectoral_summary) {
+                if (
+                    $words.Length -ge 9 -and
+                    ($null -ne ($assert_sector.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) }))
+                ) {
+                    [ref]$parsed_value = 0
+
+                    $ohlcvvf_collection += , @{
+                        #fix when Name is 2 or more words
+                        "N" = $words[0];
+                        #"S" = $assert_sector.Keys | ? {$assert_sector["$_"] -eq $words[0]};
+                        "S" = $assert_sector.Keys | ? { ($words[0] -replace "\s+", "") -match [Regex]::Escape(($assert_sector["$_"] -replace "\s+", "")) };
+                        "O" = if(is_valid_double $words[1] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+
+                        "H" = if(is_valid_double $words[-7] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "L" = if(is_valid_double $words[-6] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "C" = if(is_valid_double $words[-5] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "V" = if(is_valid_double $words[-2] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "Val" = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value; $parsed_value = 0}else{0};
+                        "NF" = 0; #MISSING: net foreign of every sectors
+                    }
+
+                    message $true $line $counter $(__LINE__)
+                } elseif($line -eq $header_sectoral_fields) {
+                    message $true $line $counter $(__LINE__)
+                } else {
+                    message $false $line $counter $(__LINE__)
+                    return
+                }
             } elseif (
                 $line -eq $header_block_sale_php -and
                 $is_block_sale_php -eq $false
@@ -211,9 +224,9 @@ while($line -ne $null)
             } elseif (
                 $line -eq $header_block_sale_usd -and
                 $is_block_sale_usd -eq $false
-            ) {
+              ) {
                 $is_block_sale_usd = $true
-                $is_block_sale_php = $false #if ($is_block_sale_php -eq $true)
+                $is_block_sale_php = $false
                 message $true $line $counter $(__LINE__)
             } elseif (
                 (
@@ -221,7 +234,7 @@ while($line -ne $null)
                     $is_block_sale_usd -eq $true
                 ) -and
                 $line.Split()[0] -in $assert_stock
-            ) {
+              ) {
                 message $true $line $counter $(__LINE__)
             } else {
                 message $false $line $counter $(__LINE__)
