@@ -2,10 +2,10 @@
 $counter = 0;
 #minimum 3219 (December 1 2016)
 #December 1 2016 to September 30 2020, $counter == 930
-$starting_id = 4138 #September 9 2020
-$year = 2020
-$last_id = 4150 #September 25 2020
-$id_border = 3239, 3482, 3727, 3971
+$starting_id = 4243 #February 15 2021
+$year = 2021
+$last_id = 4261 #March 12 2021
+$id_border = 3239, 3482, 3727, 3971, 4213
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -21,7 +21,7 @@ for ($id = $starting_id; $id -le $last_id; $id++) {
     $response = Invoke-WebRequest `
         -Uri "$url" `
         -Headers @{
-            'Referer'= 'https/www.pse.com.ph/stockMarket/marketInfo-marketActivity.html?tab=4';
+            'Referer'= 'https://www.pse.com.ph/stockMarket/marketInfo-marketActivity.html?tab=4';
         } `
         -Method Get
 

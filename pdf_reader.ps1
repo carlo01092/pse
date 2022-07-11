@@ -5,8 +5,10 @@ function __LINE__ {
 }
 
 function message {
-    Write-Host "$($args[1])  --  $(if($args[0]){"PASSED"}else{"FAILED"}) (counter: $($args[2]), line: $($args[3]))" `
-        -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
+    if (-not $args[4]) {
+        Write-Host "$($args[1])  --  $(if($args[0]){"PASSED"}else{"FAILED"}) (counter: $($args[2]), line: $($args[3]))" `
+            -ForegroundColor $(if(-$args[0]){"White"}else{"Yellow"})
+    }
 }
 
 function is_valid_double {
@@ -20,8 +22,14 @@ function is_valid_double {
     )
 }
 
+function close {
+    $reader.Close()
+    $pdf.Close()
+}
+
 Add-Type -path "itextsharp.dll"
-$file = "$PWD\stockQuotes_10022020.pdf"
+$filename = "stockQuotes_10202020.pdf"
+$file = "$PWD\pdf\" + $(if($args.Length -gt 0){$args[0]}else{$filename})
 $pdf = New-Object iTextSharp.text.pdf.pdfreader -ArgumentList "$file"
 $number_of_pages = $pdf.NumberOfPages
 
@@ -139,7 +147,7 @@ while ($line -ne $null) {
     )
 
     if ($is_valid_date) {
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
         $content_unixtime = [System.DateTimeOffset]::new($parsed_date.Value.ToLocalTime()).ToUnixTimeSeconds()
     } elseif (
         !$is_stock_line -and
@@ -150,7 +158,7 @@ while ($line -ne $null) {
             ($null -ne ($assert_other_sector | ? { ($_ -replace "\s+", "") -match [Regex]::Escape(($line -replace "\s+", "")) }))
         )
     ) {
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } elseif ($is_stock_line -and !$is_sectoral_summary) {
         [ref]$parsed_value = 0
         $ohlcvvf = @{}
@@ -164,7 +172,7 @@ while ($line -ne $null) {
                 } elseif (($i -eq -1) -and ($words[$i] -eq "-")) {
                     $ohlcvvf.NF = 0
                 } elseif (($i -eq -2) -and ($words[$i] -eq "-")) {
-                    message $true $line $counter $(__LINE__)
+                    message $true $line $counter $(__LINE__) ($args[1])
                     break    
                 } elseif (
                     ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
@@ -174,7 +182,7 @@ while ($line -ne $null) {
                         $is_block_sale_usd = $false
                     }
 
-                    message $true $line $counter $(__LINE__)
+                    message $true $line $counter $(__LINE__) ($args[1])
                     break
                     
                 }
@@ -182,16 +190,17 @@ while ($line -ne $null) {
                 $ohlcvvf.S = $words[$i]
             } elseif ($i -lt -10) {
                 $ohlcvvf_collection += , $ohlcvvf
-                message $true $line $counter $(__LINE__)
+                message $true $line $counter $(__LINE__) ($args[1])
                 break
             } else {
-                message $false $line $counter $(__LINE__)
-                return
+                message $false $line $counter $(__LINE__) ($args[1])
+                close
+                return @()
             }
         }
     } elseif ( ($line -replace "\s+", "") -eq ($header_sectoral_summary -replace "\s+", "") ) {
         $is_sectoral_summary = $true
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } elseif ($is_sectoral_summary) {
         if (($line -replace "\s+", "") -match [Regex]::Escape(($foreign -replace "\s+", ""))) {
             $at_end = ($line -replace "\s+", "") -match [Regex]::Escape(($net -replace "\s+", ""))
@@ -203,10 +212,11 @@ while ($line -ne $null) {
                 ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).NF = $parsed_value.Value
             }
 
-            message $true $line $counter $(__LINE__)
+            message $true $line $counter $(__LINE__) ($args[1])
 
             if ($at_end) {
-                return
+                close
+                return $ohlcvvf_collection
             }
         } elseif ($null -ne ($assert_sector.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) })) {
             if ($words.Length -ge 9) {
@@ -226,7 +236,7 @@ while ($line -ne $null) {
                 }
             }
 
-            message $true $line $counter $(__LINE__)
+            message $true $line $counter $(__LINE__) ($args[1])
         } elseif ($null -ne ($assert_sector_summary.Values | ? { ($line -replace "\s+", "") -match [Regex]::Escape(($_ -replace "\s+", "")) })) {
             [ref]$parsed_value = 0
             $sector_name = [System.String]::Join(" ", $words[(-$words.Length)..-7])
@@ -246,7 +256,7 @@ while ($line -ne $null) {
                 "NF" = 0;
             }
 
-            message $true $line $counter $(__LINE__)
+            message $true $line $counter $(__LINE__) ($args[1])
         } elseif (($line -replace "\s+", "") -match [Regex]::Escape(($grand_total -replace "\s+", ""))) {
             [ref]$parsed_value = 0
             $parsed_value = if(is_valid_double $words[-1] $parsed_value){$parsed_value.Value}else{0}
@@ -254,32 +264,33 @@ while ($line -ne $null) {
             ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).V = $parsed_value.Value
             ($ohlcvvf_collection | ? { $_.S -eq $PSEI }).Val = $parsed_value.Value
 
-            message $true $line $counter $(__LINE__)
+            message $true $line $counter $(__LINE__) ($args[1])
         } elseif ($line -eq $header_sectoral_fields) {
-            message $true $line $counter $(__LINE__)
+            message $true $line $counter $(__LINE__) ($args[1])
         } else {
-            message $false $line $counter $(__LINE__)
-            return
+            message $false $line $counter $(__LINE__) ($args[1])
+            close
+            return @()
         }
     } elseif (
         ($null -ne ($assert_sector.Values | ? { $line -match "^$_ SECTOR TOTAL VOLUME :" })) -or
         ($null -ne ($assert_other_sector | ? { $line -match "^$_ TOTAL VOLUME :" })) -or
         ($null -ne ($assert_footer | ? { $line -match "^$_" }))
     ) {
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } elseif (
         $line -eq $header_block_sale_php -and
         $is_block_sale_php -eq $false
     ) {
         $is_block_sale_php = $true
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } elseif (
         $line -eq $header_block_sale_usd -and
         $is_block_sale_usd -eq $false
     ) {
         $is_block_sale_usd = $true
         $is_block_sale_php = $false
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } elseif (
         (
             $is_block_sale_php -eq $true -or
@@ -287,10 +298,11 @@ while ($line -ne $null) {
         ) -and
         $line.Split()[0] -in $assert_stock
     ) {
-        message $true $line $counter $(__LINE__)
+        message $true $line $counter $(__LINE__) ($args[1])
     } else {
-        message $false $line $counter $(__LINE__)
-        return
+        message $false $line $counter $(__LINE__) ($args[1])
+        close
+        return @()
     }
 
     $line = $reader.ReadLine()
@@ -303,6 +315,3 @@ while ($line -ne $null) {
         $line = $reader.ReadLine()
     }
 }
-
-$reader.Close()
-$pdf.Close()
